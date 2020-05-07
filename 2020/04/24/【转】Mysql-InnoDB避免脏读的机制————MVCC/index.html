@@ -8,17 +8,17 @@
   <link rel="dns-prefetch" href="http://angeliukk.github.io">
   <title>【转】Mysql-InnoDB避免脏读的机制————MVCC | 菜鸟笔记</title>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
-  <meta name="description" content="前言 事务隔离级别：REPEATABLE-READ 能避免脏读 能避免脏读的原理：MVCC，本文要讨论的重点 RR隔离级别下的隐患：幻读，另外一篇文章的重点 必须提前了解：当前读和快照读的区别  隐藏字段MySQL 的 InnoDB 会维护一系列不暴露给用户的隐藏字段，其中有3个用于实现快照读（非阻塞读）  DB_TRX_ID最新一次修改本行记录的操作ID同一个事务，同一个操作要加以区分，这里指操">
+  <meta name="description" content="前言 事务隔离级别：REPEATABLE-READ 能避免脏读 能避免脏读的原理：MVCC，本文要讨论的重点 RR隔离级别下的隐患：幻读，另外一篇文章的重点 必须提前了解：当前读和快照读的区别">
 <meta property="og:type" content="article">
 <meta property="og:title" content="【转】Mysql-InnoDB避免脏读的机制————MVCC">
 <meta property="og:url" content="http://angeliukk.github.io/2020/04/24/%E3%80%90%E8%BD%AC%E3%80%91Mysql-InnoDB%E9%81%BF%E5%85%8D%E8%84%8F%E8%AF%BB%E7%9A%84%E6%9C%BA%E5%88%B6%E2%80%94%E2%80%94%E2%80%94%E2%80%94MVCC/index.html">
 <meta property="og:site_name" content="菜鸟笔记">
-<meta property="og:description" content="前言 事务隔离级别：REPEATABLE-READ 能避免脏读 能避免脏读的原理：MVCC，本文要讨论的重点 RR隔离级别下的隐患：幻读，另外一篇文章的重点 必须提前了解：当前读和快照读的区别  隐藏字段MySQL 的 InnoDB 会维护一系列不暴露给用户的隐藏字段，其中有3个用于实现快照读（非阻塞读）  DB_TRX_ID最新一次修改本行记录的操作ID同一个事务，同一个操作要加以区分，这里指操">
+<meta property="og:description" content="前言 事务隔离级别：REPEATABLE-READ 能避免脏读 能避免脏读的原理：MVCC，本文要讨论的重点 RR隔离级别下的隐患：幻读，另外一篇文章的重点 必须提前了解：当前读和快照读的区别">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:image" content="https://img-blog.csdnimg.cn/20190729114023195.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2NoZW5naGFuX3lhbmc=,size_16,color_FFFFFF,t_70">
 <meta property="og:image" content="https://img-blog.csdnimg.cn/20190729115828558.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2NoZW5naGFuX3lhbmc=,size_16,color_FFFFFF,t_70">
 <meta property="article:published_time" content="2020-04-24T09:22:06.000Z">
-<meta property="article:modified_time" content="2020-04-24T09:23:12.291Z">
+<meta property="article:modified_time" content="2020-05-07T09:00:41.525Z">
 <meta property="article:author" content="Lucas">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:image" content="https://img-blog.csdnimg.cn/20190729114023195.png?x-oss-process=image/watermark,type_ZmFuZ3poZW5naGVpdGk,shadow_10,text_aHR0cHM6Ly9ibG9nLmNzZG4ubmV0L2NoZW5naGFuX3lhbmc=,size_16,color_FFFFFF,t_70">
@@ -183,9 +183,10 @@
 <li><a href="https://blog.csdn.net/chenghan_yang/article/details/97618872" target="_blank" rel="noopener">事务隔离级别</a>：REPEATABLE-READ 能避免脏读</li>
 <li>能避免脏读的原理：MVCC，本文要讨论的重点</li>
 <li>RR隔离级别下的隐患：幻读，<a href="https://blog.csdn.net/chenghan_yang/article/details/97644108" target="_blank" rel="noopener">另外一篇文章</a>的重点</li>
-<li>必须提前了解：<a href="https://blog.csdn.net/chenghan_yang/article/details/97621708" target="_blank" rel="noopener">当前读和快照读的区别</a></li>
+<li>必须提前了解：<a href="https://blog.csdn.net/chenghan_yang/article/details/97621708" target="_blank" rel="noopener">当前读和快照读的区别</a><a id="more"></a>
+<h1 id="隐藏字段"><a href="#隐藏字段" class="headerlink" title="隐藏字段"></a>隐藏字段</h1></li>
 </ol>
-<h1 id="隐藏字段"><a href="#隐藏字段" class="headerlink" title="隐藏字段"></a>隐藏字段</h1><p>MySQL 的 InnoDB 会维护一系列不暴露给用户的隐藏字段，其中有3个用于实现快照读（非阻塞读）</p>
+<p>MySQL 的 InnoDB 会维护一系列不暴露给用户的隐藏字段，其中有3个用于实现快照读（非阻塞读）</p>
 <ul>
 <li><p>DB_TRX_ID<br>最新一次修改本行记录的操作ID<br><strong>同一个事务，同一个操作要加以区分，这里指操作</strong></p>
 </li>
@@ -343,11 +344,6 @@
       </div>
     </a>
   
-  
-    <a href="/2020/04/23/Hello-world-0/" id="article-nav-older" class="article-nav-link-wrap">
-      <div class="article-nav-title">Hello,world!</div>
-      <i class="icon-circle-right"></i>
-    </a>
   
 </nav>
 
